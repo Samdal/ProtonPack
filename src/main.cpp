@@ -108,16 +108,29 @@ const CRGB gun_led_colors[PROTON_MODES_COUNT][GUN_NUM_LEDS] = {
 };
 #define SET_GUN_LED_ON(_led) gun_leds[_led] = gun_led_colors[current_mode][_led]
 
+#if 0
 enum {
         power_down_sound = 1,
         pack_hum_sound,
         gun_trail_sound,
         start_up_sound,
-        shoot_sound,
         beep_sound,
         beep_shoot_sound,
         gun_overheat_sound,
+} trakcs;
+#else
+enum {
+        power_down_sound = 1,
+        pack_hum_sound,
+        gun_trail_sound,
+        start_up_sound,
+        beep_sound,
+        beep_shoot_sound,
+        gun_overheat_sound,
+        shoot_sound,
+	ghostbusters_theme_song,
 } tracks;
+#endif
 #define PACK_VOLUME 30
 DFPlayerMini_Fast myMP3;
 
@@ -159,8 +172,8 @@ int blue_state = 0;
 // colors of the firing beam
 uint8_t high_power_led_colors[PROTON_MODES_COUNT][4][3] = {
         { // PROTON_ACCELERATOR
-                // red, yellow, white, blue
-                {255, 0, 0}, {100 , 210, 0}, {255, 255, 255}, {50 , 30, 200}
+                // red-orange, blue, yellow, white
+                {255, 130, 0}, {20 , 20, 255}, {255 , 180, 0}, {255, 200, 230},
         },
         { // DARK_MATTER_GENERATOR
                 // blue, white, light blue, purple
@@ -335,6 +348,8 @@ void run_proton_gun()
         // if debugging mode is on, dont read switches
         // the buttons are set from the serial monitor
         // see debugging_switches()
+	static bool last_intensify_reload_state;
+	last_intensify_reload_state = intensify_reload;
 #if !DEBUGGING
         // check the gun switches
         proton_indicator_on = digitalRead(PROTON_INDICATOR);
@@ -362,7 +377,11 @@ void run_proton_gun()
                                 high_power_led_off();
 				digitalWrite(VIBRATOR, LOW);
                         }
-
+			if (intensify_reload) {
+				shooting = false;
+				reload(false);
+				return;
+			}
                 } else {
                         // do theese if the proton indicator is on but not the generator switch
                         front_led_on        = true;
@@ -371,11 +390,16 @@ void run_proton_gun()
                         gun_leds[FRONT_LED] = CRGB::Black;
 			SET_GUN_LED_ON(WHITE_LED);
 
-                }
-                if (intensify_reload) {
-                        shooting = false;
-                        reload(false);
-                        return;
+			if (intensify_reload && !last_intensify_reload_state) {
+				static bool is_on = false;
+				is_on = !is_on;
+#if 0
+				if (is_on)
+					myMP3.play(ghostbusters_theme_song);
+				else
+					myMP3.stop();
+#endif
+			}
                 }
         } else {
                 gun_leds[VENT_LED]  = CRGB::Black;
@@ -581,14 +605,14 @@ void shoot()
 	case 1:
 	case 2:
 	case 3:
+		color_change = high_power_led(high_power_led_colors[current_mode][0], rng_delay + 60, no_fade);
+		break;
 	case 4:
 	case 5:
 	case 6:
-		color_change = high_power_led(high_power_led_colors[current_mode][0], rng_delay + 100, no_fade);
-		break;
-	case 7:
 		color_change = high_power_led(high_power_led_colors[current_mode][1], rng_delay, no_fade);
 		break;
+	case 7:
 	case 8:
 		color_change = high_power_led(high_power_led_colors[current_mode][2], rng_delay, no_fade);
 		break;
@@ -622,8 +646,12 @@ bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay, 
         if (red_state < R)      red_state++;
         else if (red_state > R) red_state--;
 
+#if 0
         if (green_state < G)      green_state++;
         else if (green_state > G) green_state--;
+#else
+	green_state = G;
+#endif;
 
         if (blue_state < B)       blue_state++;
         else if (blue_state > B)  blue_state--;
