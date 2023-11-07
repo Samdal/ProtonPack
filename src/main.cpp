@@ -75,10 +75,10 @@ const CRGB cyclotron_colors[PROTON_MODES_COUNT] = {
 
 enum {
 	GUN_ON_LED,
-        WHITE_LED,
-        VENT_LED,
-        FRONT_LED,
-        GUN_NUM_LEDS,
+	WHITE_LED,
+	VENT_LED,
+	FRONT_LED,
+	GUN_NUM_LEDS,
 } gun_leds_names;
 #define GUN_LEDS_PIN 12
 CRGB gun_leds[GUN_NUM_LEDS];
@@ -479,7 +479,7 @@ void reload(bool overheat)
         high_power_led_off();
 	digitalWrite(VIBRATOR, LOW);
 
-        pack_leds[N_FILTER] = CRGB::Red;
+        pack_leds[N_FILTER] = CRGB::White;
 
 	SET_GUN_LED_ON(WHITE_LED);
 	SET_GUN_LED_ON(FRONT_LED);
@@ -538,33 +538,33 @@ void reduce_proton_hp()
                                 digitalWrite(powercell[i], HIGH);
 
                         cyclotron_off();
-                        pack_leds[N_FILTER] = CRGB::Red;
+                        pack_leds[N_FILTER] = CRGB::White;
                         gun_leds[FRONT_LED] = CRGB::Black;
                         gun_leds[WHITE_LED] = CRGB::Black;
                         gun_leds[VENT_LED] = CRGB::Black;
                         FastLED.show();
 
-			unsigned long time_now = millis();
-			while (millis() - time_now < 200) {
-				run_proton_gun();
-			}
+						unsigned long time_now = millis();
+						while (millis() - time_now < 200) {
+							run_proton_gun();
+						}
 
-                        proton_indicator_off();
-                        powercell_off();
-			SET_CYCLOTRON_ON(CYCLOTRON1);
-			SET_CYCLOTRON_ON(CYCLOTRON2);
-			SET_CYCLOTRON_ON(CYCLOTRON3);
-			SET_CYCLOTRON_ON(CYCLOTRON4);
-                        pack_leds[N_FILTER] = CRGB::Black;
-			SET_GUN_LED_ON(VENT_LED);
-			SET_GUN_LED_ON(FRONT_LED);
-			SET_GUN_LED_ON(WHITE_LED);
-                        FastLED.show();
+						proton_indicator_off();
+						powercell_off();
+						SET_CYCLOTRON_ON(CYCLOTRON1);
+						SET_CYCLOTRON_ON(CYCLOTRON2);
+						SET_CYCLOTRON_ON(CYCLOTRON3);
+						SET_CYCLOTRON_ON(CYCLOTRON4);
+						pack_leds[N_FILTER] = CRGB::Black;
+						SET_GUN_LED_ON(VENT_LED);
+						SET_GUN_LED_ON(FRONT_LED);
+						SET_GUN_LED_ON(WHITE_LED);
+						FastLED.show();
 
-			time_now = millis();
-			while (millis() - time_now < 200) {
-				run_proton_gun();
-			}
+						time_now = millis();
+						while (millis() - time_now < 200) {
+							run_proton_gun();
+						}
                 }
         } else if (proton_hp - proton_reduction > 12 && beeped){
                 beeped = false;
