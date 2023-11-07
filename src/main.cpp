@@ -17,7 +17,7 @@
 #define SHOOTING_TIME 20000
 #define IDLE_TIME 550000
 
-#define DEBUGGING 1
+#define DEBUGGING 0
 
 // front potentiometer is the potentiometer on the gun
 // it is used to change the proton hp directly above
@@ -34,10 +34,21 @@
 #define INTENSIFY_FRONT A13
 // lower button on the left side, starts the shootign animation
 #define INTENSIFY A14
+// motor that vibrates the neutrino wand
+#define VIBRATOR 8
 // output for the high power led, AKA the proton beam
 #define HP_LED_R 9
 #define HP_LED_G 10
 #define HP_LED_B 11
+
+enum {
+        PROTON_ACCELERATOR,
+        DARK_MATTER_GENERATOR,
+        PLASM_DISTRIBUTION_SYSTEM,
+        COMPOSITE_PARTICLE_SYSTEM,
+        PROTON_MODES_COUNT,
+} proton_modes;
+int current_mode = PROTON_ACCELERATOR;
 
 // cyclotron fade time
 #define CYCLOTRON_FADE_TIME 10
@@ -54,14 +65,48 @@ enum {
 #define PACK_LEDS_PIN 13
 CRGB pack_leds[PACK_NUM_LEDS];
 
+const CRGB cyclotron_colors[PROTON_MODES_COUNT] = {
+        CRGB::Red,
+        CRGB::Blue,
+        CRGB::Green,
+        CRGB::DarkOrange,
+};
+#define SET_CYCLOTRON_ON(_led) pack_leds[_led] = cyclotron_colors[current_mode]
+
 enum {
-        VENT_LED,
+	GUN_ON_LED,
         WHITE_LED,
+        VENT_LED,
         FRONT_LED,
         GUN_NUM_LEDS,
 } gun_leds_names;
 #define GUN_LEDS_PIN 12
 CRGB gun_leds[GUN_NUM_LEDS];
+
+const CRGB gun_led_colors[PROTON_MODES_COUNT][GUN_NUM_LEDS] = {
+	{
+		CRGB::Red,
+        	CRGB::White,
+        	CRGB::White,
+		CRGB::OrangeRed,
+	}, {
+		CRGB::Red,
+        	CRGB::White,
+        	CRGB::Blue,
+		CRGB::OrangeRed,
+	}, {
+		CRGB::Red,
+        	CRGB::White,
+        	CRGB::Green,
+		CRGB::OrangeRed,
+	}, {
+		CRGB::Red,
+        	CRGB::White,
+        	CRGB::Yellow,
+		CRGB::OrangeRed,
+	},
+};
+#define SET_GUN_LED_ON(_led) gun_leds[_led] = gun_led_colors[current_mode][_led]
 
 enum {
         power_down_sound = 1,
@@ -76,15 +121,6 @@ enum {
 #define PACK_VOLUME 30
 DFPlayerMini_Fast myMP3;
 
-enum {
-        PROTON_ACCELERATOR,
-        DARK_MATTER_GENERATOR,
-        PLASM_DISTRIBUTION_SYSTEM,
-        COMPOSITE_PARTICLE_SYSTEM,
-        PROTON_MODES_COUNT,
-} proton_modes;
-int current_mode = PROTON_ACCELERATOR;
-
 #define PROTON_GRAPH_COUNT 10
 const uint8_t proton_graph[PROTON_GRAPH_COUNT] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31};
 uint8_t proton_graph_stage = 0;
@@ -94,14 +130,15 @@ const int powercell[POWERCELL_COUNT] {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42
 uint8_t powercell_stage = 0;
 
 // button variables (stored here so that debug mode can change them)
-bool gun_power_on = true;
 bool pack_power_on = true;
+bool gun_power_on;
 bool proton_indicator_on;
 bool activate_on;
 bool intensify_on;
 bool intensify_reload;
 
 bool front_led_on = true;
+bool vent_led_on = true;
 bool shooting;
 bool system_on;
 
@@ -119,14 +156,11 @@ int red_state = 0;
 int green_state = 0;
 int blue_state = 0;
 
-#define MAX_POWER 100
-#define HIGH_POWER_LED_DELAY 2
-
 // colors of the firing beam
 uint8_t high_power_led_colors[PROTON_MODES_COUNT][4][3] = {
         { // PROTON_ACCELERATOR
                 // red, yellow, white, blue
-                {90, 0, 0}, {70 , 60, 0}, {90 , 80, 80}, {7 , 20, 70}
+                {255, 0, 0}, {100 , 210, 0}, {255, 255, 255}, {50 , 30, 200}
         },
         { // DARK_MATTER_GENERATOR
                 // blue, white, light blue, purple
@@ -163,16 +197,15 @@ void run_powercell();
 void powercell_off();
 
 // changes brightness in the led at the end of the gun accordingly
-bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay);
+bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay, bool no_fade);
 void high_power_led_off();
 
+bool start_vent(bool reset = false);
 void pulse_led(); // pulses the WHITE_LED inversely with the FRONT_LED
 void run_proton_indicator();
 void read_potentiometer();
 void proton_indicator_off();
 
-CRGB vent_color();
-CRGB cyclotron_color();
 void run_cyclotron();
 void fade_cyclotron();
 void cyclotron_off();
@@ -205,6 +238,7 @@ void setup()
         pinMode(HP_LED_R, OUTPUT);
         pinMode(HP_LED_G, OUTPUT);
         pinMode(HP_LED_B, OUTPUT);
+        pinMode(VIBRATOR, OUTPUT);
 
         // neopixel leds
         FastLED.addLeds<NEOPIXEL, PACK_LEDS_PIN>(pack_leds, PACK_NUM_LEDS);
@@ -216,9 +250,7 @@ void setup()
         // sound
         Serial1.begin(9600);
         myMP3.begin(Serial1);
-        delay(500);
-        myMP3.volume(PACK_VOLUME);
-        delay(500);
+        delay(100);
 }
 
 
@@ -230,7 +262,6 @@ void loop()
         //debugging_message();
 #else
         gun_power_on = digitalRead(GUN_POWER);
-        pack_power_on = digitalRead(PACK_POWER);
 #endif
         t = millis();
 
@@ -261,6 +292,7 @@ void run_proton_pack()
         run_cyclotron();
         run_powercell();
         reduce_proton_hp();
+	FastLED.show();
 }
 
 // reads the potentiometer at the front and writes a value to proton_hp
@@ -283,14 +315,15 @@ void start_up()
         for (int i = 0; i < POWERCELL_COUNT; i++)
                 digitalWrite(powercell[i], HIGH);
 
-        for (int i = 0; i < 100; i++) {
+	// TODO make it fade towards selected mdoes target color
+        for (int i = 0; i < 255; i++) {
                 pack_leds[CYCLOTRON1].setRGB(i, 0, 0);
                 pack_leds[CYCLOTRON2].setRGB(i, 0, 0);
                 pack_leds[CYCLOTRON3].setRGB(i, 0, 0);
                 pack_leds[CYCLOTRON4].setRGB(i, 0, 0);
                 FastLED.show();
 
-                delay(17);
+                delay(10);
         }
         reset_pack();
 }
@@ -298,6 +331,7 @@ void start_up()
 // check the gun switches and act accordingly
 void run_proton_gun()
 {
+	SET_GUN_LED_ON(GUN_ON_LED);
         // if debugging mode is on, dont read switches
         // the buttons are set from the serial monitor
         // see debugging_switches()
@@ -315,24 +349,27 @@ void run_proton_gun()
 
                 if (activate_on) {
                         pulse_led();
-                        gun_leds[VENT_LED] = vent_color();
-                        FastLED.show();
+			if(vent_led_on) vent_led_on = start_vent();
 
+			static unsigned long last_shot;
                         if (intensify_on) {
-                                shoot();
+				if (t - last_shot > 500)
+                                	shoot();
                         } else if (shooting) {
+				last_shot = t;
                                 myMP3.play(gun_trail_sound);
                                 shooting = false;
                                 high_power_led_off();
+				digitalWrite(VIBRATOR, LOW);
                         }
 
                 } else {
                         // do theese if the proton indicator is on but not the generator switch
                         front_led_on        = true;
                         gun_leds[VENT_LED]  = CRGB::Black;
+			vent_led_on         = true;
                         gun_leds[FRONT_LED] = CRGB::Black;
-                        gun_leds[WHITE_LED] = CRGB::White;
-                        FastLED.show();
+			SET_GUN_LED_ON(WHITE_LED);
 
                 }
                 if (intensify_reload) {
@@ -344,8 +381,8 @@ void run_proton_gun()
                 gun_leds[VENT_LED]  = CRGB::Black;
                 gun_leds[FRONT_LED] = CRGB::Black;
                 gun_leds[WHITE_LED] = CRGB::Black;
-                FastLED.show();
                 proton_reduction = 0;
+		vent_led_on     = true;
                 proton_indicator_off();
         }
 }
@@ -393,9 +430,7 @@ void run_cyclotron()
 
         // if the cyclotron is off, turn it on after a time has exceeded.
         if (!cyclotron_on && t - cyclotron_previous_time >= proton_pack_time) {
-                pack_leds[cyclotron_stage] = cyclotron_color();
-                FastLED.show();
-
+		SET_CYCLOTRON_ON(cyclotron_stage);
                 cyclotron_previous_time = t;
                 cyclotron_on = true;
         }
@@ -410,20 +445,21 @@ void reload(bool overheat)
 #endif
         myMP3.play(gun_overheat_sound);
 
-        pack_leds[CYCLOTRON1] = cyclotron_color();
-        pack_leds[CYCLOTRON2] = cyclotron_color();
-        pack_leds[CYCLOTRON3] = cyclotron_color();
-        pack_leds[CYCLOTRON4] = cyclotron_color();
+	SET_CYCLOTRON_ON(CYCLOTRON1);
+	SET_CYCLOTRON_ON(CYCLOTRON2);
+	SET_CYCLOTRON_ON(CYCLOTRON3);
+	SET_CYCLOTRON_ON(CYCLOTRON4);
         proton_indicator_off();
         for (int i = 0; i < POWERCELL_COUNT; i++)
                 digitalWrite(powercell[i], HIGH);
         high_power_led_off();
+	digitalWrite(VIBRATOR, LOW);
 
         pack_leds[N_FILTER] = CRGB::Red;
 
-        gun_leds[WHITE_LED] = CRGB::White;
-        gun_leds[FRONT_LED] = CRGB::Red;
-        gun_leds[VENT_LED]  = vent_color();
+	SET_GUN_LED_ON(WHITE_LED);
+	SET_GUN_LED_ON(FRONT_LED);
+	SET_GUN_LED_ON(VENT_LED);
         FastLED.show();
         if (overheat) {
                 delay(OVERHEAT_TIME);
@@ -466,7 +502,7 @@ void reduce_proton_hp()
         }
 
         // if there is less than x hp left, play the overheat warning sound
-        if (proton_hp - proton_reduction <= 12 && !beeped) {
+        if (proton_hp - proton_reduction <= 10 && !beeped) {
                 beeped = true;
                 if (shooting) myMP3.play(beep_shoot_sound);
                 else         myMP3.play(beep_sound);
@@ -483,20 +519,28 @@ void reduce_proton_hp()
                         gun_leds[WHITE_LED] = CRGB::Black;
                         gun_leds[VENT_LED] = CRGB::Black;
                         FastLED.show();
-                        delay(200);
+
+			unsigned long time_now = millis();
+			while (millis() - time_now < 200) {
+				run_proton_gun();
+			}
 
                         proton_indicator_off();
                         powercell_off();
-                        pack_leds[CYCLOTRON1] = cyclotron_color();
-                        pack_leds[CYCLOTRON2] = cyclotron_color();
-                        pack_leds[CYCLOTRON3] = cyclotron_color();
-                        pack_leds[CYCLOTRON4] = cyclotron_color();
+			SET_CYCLOTRON_ON(CYCLOTRON1);
+			SET_CYCLOTRON_ON(CYCLOTRON2);
+			SET_CYCLOTRON_ON(CYCLOTRON3);
+			SET_CYCLOTRON_ON(CYCLOTRON4);
                         pack_leds[N_FILTER] = CRGB::Black;
-                        gun_leds[FRONT_LED] = CRGB::Red;
-                        gun_leds[WHITE_LED] = CRGB::White;
-                        gun_leds[VENT_LED] = CRGB::White;
+			SET_GUN_LED_ON(VENT_LED);
+			SET_GUN_LED_ON(FRONT_LED);
+			SET_GUN_LED_ON(WHITE_LED);
                         FastLED.show();
-                        delay(200);
+
+			time_now = millis();
+			while (millis() - time_now < 200) {
+				run_proton_gun();
+			}
                 }
         } else if (proton_hp - proton_reduction > 12 && beeped){
                 beeped = false;
@@ -506,58 +550,52 @@ void reduce_proton_hp()
 // shoot and depleet amunition
 void shoot()
 {
-        static unsigned long previous_led_update = 0;
         // letting the program know it has shot so that when it turns of it can play the trail effect
         if (!shooting) {
                 shooting = true;
                 myMP3.play(shoot_sound);
+		digitalWrite(VIBRATOR, HIGH);
         }
 
-        if (t - previous_led_update >= HIGH_POWER_LED_DELAY) {
-                static bool color_change;
-                static unsigned long rng_delay = 100;
-                static int rng;
+	static bool color_change;
+	static unsigned long rng_delay = 100;
+	static int rng;
+	static bool no_fade;
 
-                if (color_change) {
-                        rng = random(10);
-                        rng_delay = random(100, 300);
-                        color_change = false;
-                }
+	if (color_change) {
+		static bool no_fade_next;
+		rng = random(10);
+		rng_delay = random(80, 200);
+		if (no_fade_next) {
+			no_fade_next = false;
+			no_fade = false;
+		} else {
+			if (no_fade) no_fade_next = true;
+			else         no_fade = random(2) && rng_delay < 150;
+		}
+		color_change = false;
+	}
 
-                switch (rng)  {
-
-                        // 4/10 chance of being color 1
-                case 0:
-                case 1:
-                case 2:
-                case 3:
-                        color_change = high_power_led(high_power_led_colors[current_mode][0], rng_delay);
-                        break;
-
-                        // 3/10  chance of being color 2
-                case 4:
-                case 5:
-                case 6:
-                        color_change = high_power_led(high_power_led_colors[current_mode][1], rng_delay);
-                        break;
-
-                        // 2/10 chance of being color 3
-                case 7:
-                case 8:
-                        color_change = high_power_led(high_power_led_colors[current_mode][2], rng_delay);
-                        break;
-
-                        // 1/10 chance of being color 4
-                case 9:
-                        color_change = high_power_led(high_power_led_colors[current_mode][3], rng_delay);
-                        break;
-                default:
-                        color_change = true;
-                        break;
-                }
-                previous_led_update = t;
-        }
-
+	switch (rng)  {
+	case 0:
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+		color_change = high_power_led(high_power_led_colors[current_mode][0], rng_delay + 100, no_fade);
+		break;
+	case 7:
+		color_change = high_power_led(high_power_led_colors[current_mode][1], rng_delay, no_fade);
+		break;
+	case 8:
+		color_change = high_power_led(high_power_led_colors[current_mode][2], rng_delay, no_fade);
+		break;
+	case 9:
+		color_change = high_power_led(high_power_led_colors[current_mode][3], rng_delay, no_fade);
+		break;
+	}
 
         // reduce the proton_hp (ammonution)
         static unsigned long last_shooting;
@@ -567,28 +605,33 @@ void shoot()
         }
 }
 
+#define red_max 90
 // changes brightness in the led at the end of the gun accordingly
-bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay)
+bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay, bool no_fade)
 {
         static unsigned long previous_color_change;
-        int R = constrain(ledcolor[0], 0, MAX_POWER);
+        int R = min(ledcolor[0], red_max);
+        int G = ledcolor[1];
+        int B = ledcolor[2];
+	if (no_fade) {
+		red_state = R;
+		green_state = G;
+		blue_state = B;
+	}
+
         if (red_state < R)      red_state++;
         else if (red_state > R) red_state--;
 
-        int G = constrain(ledcolor[1], 0, MAX_POWER);
         if (green_state < G)      green_state++;
         else if (green_state > G) green_state--;
 
-        int B = constrain(ledcolor[2], 0, MAX_POWER);
         if (blue_state < B)       blue_state++;
         else if (blue_state > B)  blue_state--;
-
 
         analogWrite(HP_LED_R, red_state);
         analogWrite(HP_LED_G, green_state);
         analogWrite(HP_LED_B, blue_state);
-        if (red_state == R && green_state == G && blue_state == B
-            && t - previous_color_change >= spacing_delay) {
+        if (t - previous_color_change >= spacing_delay) {
                 previous_color_change = t;
                 return true;
         }
@@ -609,13 +652,17 @@ void gun_lights_off()
 {
         proton_reduction = 0;
         front_led_on     = true;
+	vent_led_on      = true;
+	start_vent(true);
 
-        gun_leds[WHITE_LED] = CRGB::Black;
-        gun_leds[FRONT_LED] = CRGB::Black;
-        gun_leds[VENT_LED]  = CRGB::Black;
+        gun_leds[GUN_ON_LED] = CRGB::Black;
+        gun_leds[WHITE_LED]  = CRGB::Black; 
+	gun_leds[FRONT_LED]  = CRGB::Black;
+        gun_leds[VENT_LED]   = CRGB::Black;
         FastLED.show();
 
         high_power_led_off();
+	digitalWrite(VIBRATOR, LOW);
         proton_indicator_off();
 
         if (shooting) {
@@ -630,18 +677,42 @@ void gun_lights_off()
 void pulse_led()
 {
         static unsigned long previous_pulse;
-        if (t - previous_pulse >= proton_pack_time / 1.5) {
+        if (t - previous_pulse >= proton_pack_time) {
                 if (front_led_on) {
-                        gun_leds[WHITE_LED] = CRGB::White;
+			SET_GUN_LED_ON(WHITE_LED);
                         gun_leds[FRONT_LED] = CRGB::Black;
                 } else {
                         gun_leds[WHITE_LED] = CRGB::Black;
-                        gun_leds[FRONT_LED] = CRGB::Red;
+			SET_GUN_LED_ON(FRONT_LED);
                 }
-                FastLED.show();
                 front_led_on = !front_led_on;
                 previous_pulse   = t;
         }
+}
+
+#define vent_blink_time 60
+bool start_vent(bool reset) {
+	static unsigned long last_vent_blink;
+	static int vent_times;
+	static bool vent_on;
+
+	if (vent_times > 4 || reset) {
+		if (!reset) SET_GUN_LED_ON(VENT_LED);
+		vent_times = 0;
+		return false;
+	}
+	if (millis() - last_vent_blink < vent_blink_time)
+		return true;
+
+	if (vent_on)
+        	gun_leds[VENT_LED] = CRGB::Black;
+	else
+		SET_GUN_LED_ON(VENT_LED);
+
+	vent_on = !vent_on;
+	last_vent_blink = millis();
+	vent_times++;
+	return true;
 }
 
 void run_proton_indicator()
@@ -659,29 +730,6 @@ void proton_indicator_off()
                 digitalWrite(proton_graph[i], LOW);
 }
 
-CRGB cyclotron_color()
-{
-        switch (current_mode) {
-        case PROTON_ACCELERATOR:        return CRGB::Red;
-        case DARK_MATTER_GENERATOR:     return CRGB::Blue;
-        case PLASM_DISTRIBUTION_SYSTEM: return CRGB::Green;
-        case COMPOSITE_PARTICLE_SYSTEM: return CRGB::Orange;
-        default:                        return CRGB::White;
-        }
-}
-
-// changes the color of the vent
-CRGB vent_color()
-{
-        switch (current_mode) {
-        case PROTON_ACCELERATOR:        return CRGB::White;
-        case DARK_MATTER_GENERATOR:     return CRGB::Blue;
-        case PLASM_DISTRIBUTION_SYSTEM: return CRGB::Green;
-        case COMPOSITE_PARTICLE_SYSTEM: return CRGB::Yellow;
-        default:                        return CRGB::Red;
-        }
-}
-
 void cyclotron_off()
 {
         pack_leds[CYCLOTRON1] = CRGB::Black;
@@ -689,8 +737,6 @@ void cyclotron_off()
         pack_leds[CYCLOTRON3] = CRGB::Black;
         pack_leds[CYCLOTRON4] = CRGB::Black;
         FastLED.show();
-
-        cyclotron_stage = 3;
 }
 
 void fade_cyclotron()
@@ -709,51 +755,6 @@ void fade_cyclotron()
                                 pack_leds[i].raw[c] = 0;
         }
         cyclotron_previous_fade = t;
-        FastLED.show();
-}
-
-// printing debugging messages
-void debugging_message()
-{
-        delay(200);
-        for (int i = 0 ; i < 30 ; i++) {
-                Serial.println("");
-        }
-  
-        if (!system_on) {
-                Serial.println("System is off");
-                return;
-        }
-        Serial.println("Switches:");
-        Serial.println("gun_power_on: "  + String(gun_power_on));
-        Serial.println("pack_power_on: " + String(pack_power_on));
-        Serial.println("proton_indicator_on: " + String(proton_indicator_on));
-        Serial.println("activate_on: "  + String(activate_on));
-        Serial.println("intensify_on: " + String(intensify_on));
-        Serial.println("intensify_reload: " + String(intensify_reload));
-        Serial.println("");
-
-        Serial.println("Proton HP: " + String(proton_hp));
-        Serial.println("Effective proton HP: " + String(proton_hp - proton_reduction));
-        Serial.println("t: " + String(t));
-        Serial.println("Proton pack mode: " + String(current_mode));
-        Serial.println();
-        Serial.println("Cyclotron stage: "  + String(cyclotron_stage));
-        Serial.println("Powercell stage: "  + String(powercell_stage));
-
-        if (!gun_power_on) return;
-
-        Serial.println("");
-        Serial.println("Gun lights:");
-        Serial.println("White led: " + String(!front_led_on));
-        Serial.println("front led: " + String(front_led_on));
-        Serial.println("Vent led: "  + String(activate_on));
-        Serial.println("Proton indicator stage: " + String(proton_graph_stage));
-        Serial.println("Proton position: "  + String(proton_indicator_pot_value));
-        Serial.println("Proton reduction: " + String(proton_reduction));
-        Serial.println("");
-        Serial.println("Shooting: " + String(shooting));
-
 }
 
 // turning on and off switches from Serial monitor
