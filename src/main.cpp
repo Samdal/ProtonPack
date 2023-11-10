@@ -108,17 +108,9 @@ const CRGB gun_led_colors[PROTON_MODES_COUNT][GUN_NUM_LEDS] = {
 };
 #define SET_GUN_LED_ON(_led) gun_leds[_led] = gun_led_colors[current_mode][_led]
 
-#if 0
-enum {
-        power_down_sound = 1,
-        pack_hum_sound,
-        gun_trail_sound,
-        start_up_sound,
-        beep_sound,
-        beep_shoot_sound,
-        gun_overheat_sound,
-} trakcs;
-#else
+#define JRGEN_EXTRA
+
+#ifdef JRGEN_EXTRA
 enum {
         power_down_sound = 1,
         pack_hum_sound,
@@ -130,7 +122,18 @@ enum {
         shoot_sound,
 	ghostbusters_theme_song,
 } tracks;
+#else
+enum {
+        power_down_sound = 1,
+        pack_hum_sound,
+        gun_trail_sound,
+        start_up_sound,
+        beep_sound,
+        beep_shoot_sound,
+        gun_overheat_sound,
+} trakcs;
 #endif
+
 #define PACK_VOLUME 30
 DFPlayerMini_Fast myMP3;
 
@@ -393,7 +396,7 @@ void run_proton_gun()
 			if (intensify_reload && !last_intensify_reload_state) {
 				static bool is_on = false;
 				is_on = !is_on;
-#if 0
+#ifdef JRGEN_EXTRA
 				if (is_on)
 					myMP3.play(ghostbusters_theme_song);
 				else
@@ -646,12 +649,12 @@ bool high_power_led(const uint8_t* ledcolor, const unsigned long spacing_delay, 
         if (red_state < R)      red_state++;
         else if (red_state > R) red_state--;
 
-#if 0
+#ifdef JRGEN_EXTRA
         if (green_state < G)      green_state++;
         else if (green_state > G) green_state--;
 #else
 	green_state = G;
-#endif;
+#endif
 
         if (blue_state < B)       blue_state++;
         else if (blue_state > B)  blue_state--;
